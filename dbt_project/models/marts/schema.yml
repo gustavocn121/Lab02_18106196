@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: mart_voos_por_empresa
+    description: >
+      Tabela gold de voos por empresa
+    columns:
+      - name: id_empresa
+        tests:
+          - not_null
+      - name: nm_empresa
+        tests:
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: trimestre
+        tests:
+          - not_null
+      - name: total_voos
+        tests:
+          - not_null
+      - name: total_passageiros
+        tests:
+          - not_null
+      - name: taxa_ocupacao_pct
+
+  - name: mart_voos_por_rota
+    description: >
+      Tabela gold com métricas de voo por rota
+    columns:
+      - name: id_aerodromo_origem
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_voos')
+              field: id_aerodromo_origem
+      - name: id_aerodromo_destino
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_voos')
+              field: id_aerodromo_destino
+      - name: ano
+        tests:
+          - not_null
+      - name: total_voos
+        tests:
+          - not_null
+      - name: total_passageiros
+        tests:
+          - not_null
