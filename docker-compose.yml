@@ -1,48 +1,79 @@
 services:
   postgres:
     image: postgres:13
-    container_name: lab01_postgres
+    container_name: lab02_postgres
     environment:
-      POSTGRES_DB: lab_01_db
+      POSTGRES_DB: lab_02_db
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: 123
+      POSTGRES_PASSWORD: "123"
     ports:
       - "5432:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
       - ./sql/ddl.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - lab01_network
+      - lab02_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d lab_02_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   ingestao:
-    build: .
-    container_name: lab01_ingestao
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lab02_ingestao
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
-      - lab01_network
+      - lab02_network
     volumes:
       - ./data:/app/data
 
+  dbt:
+    build:
+      context: .
+      dockerfile: dbt.Dockerfile
+    container_name: lab02_dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ingestao:
+        condition: service_completed_successfully
+    networks:
+      - lab02_network
+    volumes:
+      - ./dbt_project:/dbt
+    working_dir: /dbt
+    environment:
+      DBT_HOST: postgres
+      DBT_USER: user
+      DBT_PASSWORD: "123"
+      DBT_PORT: "5432"
+      DBT_DBNAME: lab_02_db
+    command: >
+      dbt debug --profiles-dir /dbt &&
+      dbt run --profiles-dir /dbt &&
+      dbt test --profiles-dir /dbt &&
+      dbt docs generate --profiles-dir /dbt
+
   metabase:
     image: metabase/metabase:latest
-    container_name: lab01_metabase
+    container_name: lab02_metabase
     ports:
       - "3000:3000"
     environment:
       MB_DB_TYPE: h2
       MB_DB_FILE: /metabase-data/metabase.db
-      MB_ENABLE_SERIALIZATION: true
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
-      - lab01_network
+      - lab02_network
     volumes:
       - ./metabase_data:/metabase-data
 
-volumes:
-  postgres_data:
-  metabase_data:
-
 networks:
-  lab01_network:
+  lab02_network:
