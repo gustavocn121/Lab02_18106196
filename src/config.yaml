@@ -10,14 +10,9 @@ kaggle:
   force_download: false
 visualization:
   output_path: docs/plots/
-quality:
-  expectation_suite_name: anac_expectation_suite
-  asset_name: my_asset
-  datasource_name: my_pandas_datasource
-  checkpoint_name: anac_checkpoint
 postgres:
   host: postgres
   port: 5432
-  database: lab_01_db
+  database: lab_02_db
   user: user
   password: 123
