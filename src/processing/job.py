@@ -79,9 +79,8 @@ def run(config: dict):
         ignore_errors=False,
         low_memory=True,
     )
-    df = df.collect(streaming=True)
     df = clean_data(df)
 
-    export_data(df.lazy(), silver_path + "data", partition_by="dt_referencia")
-    run_report(df.lazy(), config)
-    run_visualization(df.lazy(), config)
+    export_data(df, silver_path + "data", partition_by="dt_referencia")
+    run_report(df, config)
+    run_visualization(df, config)
