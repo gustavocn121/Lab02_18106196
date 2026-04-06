@@ -1,0 +1,33 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: anac_voos
+        columns:
+          - name: id_basica
+          - name: id_empresa
+            tests:
+              - not_null
+          - name: nm_empresa
+          - name: sg_empresa_iata
+          - name: nm_pais
+          - name: id_aerodromo_origem
+            tests:
+              - not_null
+          - name: id_aerodromo_destino
+            tests:
+              - not_null
+          - name: dt_referencia
+            tests:
+              - not_null
+          - name: nr_ano_referencia
+          - name: nr_trimestre_referencia
+          - name: nr_mes_referencia
+          - name: nr_decolagem
+          - name: nr_passag_pagos
+          - name: kg_carga_paga
+          - name: nr_horas_voadas
+          - name: km_distancia
+          - name: nr_assentos_ofertados

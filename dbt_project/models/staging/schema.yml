@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_voos
+    description: >
+      staging que lê da camada silver e prepara os dados para os marts gold.
+    columns:
+      - name: id_basica
+        tests:
+          - not_null
+      - name: id_empresa
+        tests:
+          - not_null
+      - name: dt_referencia
+        tests:
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: trimestre
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: mes
+        description: "Mês de referência"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      - name: quantidade_voos
+        tests:
+          - not_null
+      - name: passageiros
+        tests:
+          - not_null
+      - name: periodo_sazonal
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'Q1 - Verão/Carnaval'
+                - 'Q2 - Outono'
+                - 'Q3 - Inverno/Férias'
+                - 'Q4 - Primavera/Natal'
+                - 'Desconhecido'
