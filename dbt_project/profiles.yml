@@ -1,0 +1,12 @@
+lab02_anac:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'localhost') }}"
+      user: "{{ env_var('DBT_USER', 'user') }}"
+      password: "{{ env_var('DBT_PASSWORD', '123') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'lab_02_db') }}"
+      schema: public
+      threads: 4

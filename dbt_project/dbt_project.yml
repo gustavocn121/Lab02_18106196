@@ -1,0 +1,22 @@
+name: 'lab02_anac'
+version: '1.0.0'
+config-version: 2
+
+profile: 'lab02_anac'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  lab02_anac:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: gold
+      +materialized: table
