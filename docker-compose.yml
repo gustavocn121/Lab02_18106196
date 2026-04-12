@@ -53,11 +53,8 @@ services:
       DBT_PASSWORD: "123"
       DBT_PORT: "5432"
       DBT_DBNAME: lab_02_db
-    command: >
-      dbt debug --profiles-dir /dbt &&
-      dbt run --profiles-dir /dbt &&
-      dbt test --profiles-dir /dbt &&
-      dbt docs generate --profiles-dir /dbt
+    ports:
+      - "8001:8001"
 
   metabase:
     image: metabase/metabase:latest
@@ -70,6 +67,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      dbt:
+        condition: service_completed_successfully
     networks:
       - lab02_network
     volumes:
