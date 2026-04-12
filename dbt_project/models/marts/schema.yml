@@ -33,14 +33,16 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('stg_voos')
-              field: id_aerodromo_origem
+              arguments:
+                to: ref('stg_voos')
+                field: id_aerodromo_origem
       - name: id_aerodromo_destino
         tests:
           - not_null
           - relationships:
-              to: ref('stg_voos')
-              field: id_aerodromo_destino
+              arguments:
+                to: ref('stg_voos')
+                field: id_aerodromo_destino
       - name: ano
         tests:
           - not_null

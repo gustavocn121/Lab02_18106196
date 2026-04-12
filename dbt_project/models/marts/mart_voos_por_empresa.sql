@@ -23,10 +23,10 @@ SELECT
     CASE
         WHEN SUM(assentos_ofertados) > 0
         THEN ROUND(
-            (SUM(passageiros)::numeric / NULLIF(SUM(assentos_ofertados), 0)) * 100,
+            (SUM(passageiros)::numeric / NULLIF(SUM(assentos_ofertados)::numeric, 0)) * 100,
             2
         )
-        ELSE 0
+        ELSE 0::numeric
     END AS taxa_ocupacao_pct
 
 FROM {{ ref('stg_voos') }}

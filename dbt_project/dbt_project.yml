@@ -18,5 +18,6 @@ models:
       +schema: staging
       +materialized: view
     marts:
-      +schema: gold
+      +schema: analytics
       +materialized: table
+      +tags: ["gold", "bi_ready"]
