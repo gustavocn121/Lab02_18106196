@@ -1,14 +1,21 @@
 # Lab02_18106196 — Transformação de Dados com DBT
 
-Pipeline de dados ANAC com transformação Silver → Gold usando **dbt-postgres** e visualização via **Metabase**.
+Pipeline de dados ANAC com transformação Silver → Gold usando **dbt** e visualização via **Metabase**.
 
-## 0. Configuração de variáveis de ambiente
+---
+
+## 0. Pré-requisitos
+
+- [Docker](https://www.docker.com/) instalado e em execução
+- Token da API do Kaggle
 
 Crie um arquivo `.env` na raiz do projeto:
+
 ```.env
-KAGGLE_API_TOKEN=
+KAGGLE_API_TOKEN=seu_token_aqui
 ```
-Preencha com o seu token da API do Kaggle.
+
+---
 
 ## 1. Arquitetura
 
@@ -19,55 +26,52 @@ flowchart LR
     C --> D[Processing Job]
     D --> E[Silver Parquet]
     E --> F[Load Job Python]
-    F --> G[(silver.anac_voos\nPostgreSQL)]
-    G --> H[DBT]
-    H --> I[(staging.stg_voos\nview)]
-    H --> J[(gold.mart_voos_por_empresa\ntable)]
-    H --> K[(gold.mart_voos_por_rota\ntable)]
+    F --> G[(silver.anac_voos<br>PostgreSQL)]
+    G --> H[(staging.stg_voos<br>view)]
+    H --> J[(gold.mart_voos_por_empresa<br>table)]
+    H --> K[(gold.mart_voos_por_rota<br>table)]
     J --> L[Metabase Dashboard]
     K --> L
 ```
 
+---
+
 ## 2. Como executar
 
-### 2.1 Subir o banco
+### 2.1 Executar o pipeline completo
 
 ```bash
-docker compose up postgres -d
+docker compose up
 ```
 
-O `sql/ddl.sql` cria automaticamente o schema `silver` e a tabela `silver.anac_voos`.
+Os serviços sobem em ordem automática com dependências encadeadas:
 
-### 2.2 Pipeline de ingestão (Raw → Silver → Postgres)
-
-```bash
-docker compose up ingestao
+```
+postgres (healthy) → ingestao → dbt (encerra)  -→ metabase  :3000
+                                               |→ dbt-docs  :8001
 ```
 
-Executa: download Kaggle → processamento Polars → carga em `silver.anac_voos`.
+| Etapa | Serviço | O que faz |
+|---|---|---|
+| 1 | `postgres` | Sobe o banco e executa `sql/ddl.sql` (schema `silver` + tabela `anac_voos`) |
+| 2 | `ingestao` | Download Kaggle → processamento Polars → carga em `silver.anac_voos` |
+| 3 | `dbt` | `dbt debug` → `dbt run` → `dbt test` — encerra |
+| 4 | `dbt-docs` | `dbt docs generate` → `dbt docs serve --profiles-dir /dbt --host 0.0.0.0 --port 8001`<br> a documentação gerada em [http://localhost:8001](http://localhost:8001) |
+| 5 | `metabase` | Sobe o BI em [http://localhost:3000](http://localhost:3000) |
 
-### 2.3 Transformações DBT (Silver → Gold)
+> `dbt-docs` e `metabase` só sobem após o `dbt` encerrar com sucesso.
 
-```bash
-docker compose up dbt
-```
+### 2.2 Configurar conexão no Metabase
 
-O container executa em sequência:
-```
-dbt debug            # valida conexão
-dbt run              # cria views staging e tabelas gold
-dbt test             # roda todos os testes
-dbt docs generate    # gera documentação HTML
-```
+Ao acessar [http://localhost:3000](http://localhost:3000) pela primeira vez, configure a conexão ao banco:
 
-### 2.4 Metabase (BI)
-
-```bash
-docker compose up metabase -d
-```
-
-Acesse [http://localhost:3000](http://localhost:3000) e configure a conexão:
-- Host: `postgres` | Porta: `5432` | DB: `lab_02_db` | User: `user` | Password: `123`
+| Parâmetro | Valor |
+|---|---|
+| Host | `postgres` |
+| Porta | `5432` |
+| Database | `lab_02_db` |
+| Usuário | `user` |
+| Senha | `123` |
 
 ---
 
@@ -80,18 +84,18 @@ dbt_project/
 ├── models/
 │   ├── staging/
 │   │   ├── sources.yml          # source: silver.anac_voos
-│   │   ├── stg_voos.sql         # view com limpeza + macro sazonal
+│   │   ├── stg_voos.sql         # view com limpeza + macro de período
 │   │   └── schema.yml           # testes genéricos
 │   └── marts/
 │       ├── mart_voos_por_empresa.sql
 │       ├── mart_voos_por_rota.sql
 │       └── schema.yml           # testes genéricos + FK
 ├── macros/
-│   ├── classify_period.sql      # classifica trimestre em período sazonal
-│   └── generate_schema_name.sql # usa nomes exatos de schema
+│   ├── classify_period.sql      # classifica trimestre
+│   └── generate_schema_name.sql # atualiza nome do schema
 └── tests/
-    ├── assert_passageiros_positivos.sql
-    └── assert_voos_validos.sql
+    ├── assert_passageiros_positivos.sql # passageiros < 0
+    └── assert_voos_validos.sql # total_voos <= 0 OR distancia_media_km <= 0
 ```
 
 ### Models
@@ -104,10 +108,16 @@ dbt_project/
 
 ### Macro `classify_period`
 
+Classifica o trimestre de referência em um período sazonal brasileiro. Chamada dentro de `stg_voos.sql`:
+
 ```sql
 {{ classify_period('nr_trimestre_referencia') }}
 -- Retorna: 'Q1 - Verão/Carnaval' | 'Q2 - Outono' | 'Q3 - Inverno/Férias' | 'Q4 - Primavera/Natal'
 ```
+
+### Macro `generate_schema_name`
+
+Garante que os models sejam criados nos schemas exatos definidos no `dbt_project.yml` (`staging`, `gold`), sem o prefixo padrão do dbt (ex: `public_staging`).
 
 ### Testes
 
@@ -121,65 +131,57 @@ dbt_project/
 
 ---
 
-## 4. Executar DBT localmente (sem Docker)
+## 4. Documentação DBT
 
-```bash
-pip install dbt-postgres==1.8.2
-cd dbt_project
+Após executar o pipeline, a documentação é gerada automaticamente e servida em [http://localhost:8001](http://localhost:8001).
 
-export DBT_HOST=localhost
-export DBT_USER=user
-export DBT_PASSWORD=123
-export DBT_DBNAME=lab_02_db
+### 4.1 Visão geral da documentação
 
-dbt run   --profiles-dir .
-dbt test  --profiles-dir .
-dbt docs generate --profiles-dir .
-dbt docs serve    --profiles-dir .   # http://localhost:8080
-```
+![DBT Docs Overview](docs/images/dbt/dbt_docs_overview.png)
+
+### 4.2 Lineage Graph
+
+![DBT Lineage Graph](docs/images/dbt/dbt_lineage.png)
 
 ---
 
 ## 5. Dashboard Metabase
 
-Visualizações recomendadas na camada Gold:
+Visualizações disponíveis na camada Gold:
 
-1. **Barras** — Total de voos por empresa (filtro por ano) → `gold.mart_voos_por_empresa`
-2. **Linha** — Evolução de passageiros por trimestre/ano → `gold.mart_voos_por_empresa`
-3. **Tabela** — Top 20 rotas por volume de passageiros → `gold.mart_voos_por_rota`
+1. **Barras** — Top 10 Empresas por Média de Distância Voada → `gold.mart_voos_por_empresa`
+2. **Barras** — Municípios destino mais populares → `gold.mart_voos_por_empresa`
+3. **Barras empilhadas** — Carga Total por Empresa e Ano (Top 10) → `gold.mart_voos_por_rota`
 
----
+![Metabase Dashboard](docs/images/metabase/gold_1.png)
 
-## 6. Prints do projeto
-
-> Após executar, adicione os prints em `docs/prints/`:
-> - `dbt_docs_overview.png` — tela de documentação gerada pelo DBT
-> - `dbt_lineage.png` — grafo de lineage do DBT
-> - `metabase_dashboard.png` — dashboard no Metabase
+![Metabase Dashboard](docs/images/metabase/gold_2.png)
 
 ---
 
-## 7. Documentação das etapas do pipeline
+## 6. Documentação das etapas do pipeline
 
-### 7.1 Ingestion Job (`src/ingestion/job.py`)
+### 6.1 Ingestion Job (`src/ingestion/job.py`)
 - Download do dataset ANAC via Kaggle API.
 - Salva os arquivos CSV na camada Raw (`data/raw/`).
 
-### 7.2 Processing Job (`src/processing/job.py`)
+### 6.2 Processing Job (`src/processing/job.py`)
 - Limpeza com Polars: separadores decimais, cast de tipos, conversão de datas.
 - Exporta Parquet particionado por `dt_referencia` em `data/silver/data/`.
 
-### 7.3 Load Job (`src/load/job.py`) — **modificado para Lab02**
+### 6.3 Load Job (`src/load/job.py`)
 - Lê o Parquet da camada Silver.
 - Carrega via `COPY` (bulk insert) na tabela flat `silver.anac_voos` no PostgreSQL.
-- **Diferença do Lab01:** não cria mais o star schema diretamente — isso é responsabilidade do DBT.
+- **Diferença do Lab01:** não cria o star schema diretamente — isso é responsabilidade do DBT.
 
-### 7.4 DBT (Silver → Gold)
+### 6.4 DBT (Silver → Gold)
 - `stg_voos` (view): tipagem, filtros, macro `classify_period`.
 - `mart_voos_por_empresa` (table): agrega por empresa, ano, trimestre, taxa de ocupação.
 - `mart_voos_por_rota` (table): agrega por par origem/destino e ano.
 
-## 8. Dicionário de Dados — `silver.anac_voos`
+---
+
+## 7. Dicionário de Dados — `silver.anac_voos`
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
