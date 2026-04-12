@@ -1,13 +1,14 @@
-# Lab01_PART2_NUSP
-Repo público no github: [link](https://github.com/gustavocn121/Lab01_PART1_NUSP)
+# Lab02_18106196 — Transformação de Dados com DBT
+
+Pipeline de dados ANAC com transformação Silver → Gold usando **dbt-postgres** e visualização via **Metabase**.
 
 ## 0. Configuração de variáveis de ambiente
 
-Crie um arquivo .env na raiz do projeto com o seguinte conteúdo:
+Crie um arquivo `.env` na raiz do projeto:
 ```.env
 KAGGLE_API_TOKEN=
 ```
-Preencha o valor com o seu token da API do Kaggle.
+Preencha com o seu token da API do Kaggle.
 
 ## 1. Arquitetura
 
@@ -16,169 +17,191 @@ flowchart LR
     A[Kaggle: CSV ANAC] --> B[Ingestion Job]
     B --> C[Raw Layer: CSV]
     C --> D[Processing Job]
-    D --> E{Output}
-    E -->|Silver Layer| F[Parquet Files]
-    E -->|Métricas| G[Report]
-    E -->|Gráficos| H[Visualization]
-    F --> I[Load Job]
-    I --> J[Postgres: Data Warehouse]
-    C --> K[Quality: Great Expectations]
-    K --> L[Validation Report]
+    D --> E[Silver Parquet]
+    E --> F[Load Job Python]
+    F --> G[(silver.anac_voos\nPostgreSQL)]
+    G --> H[DBT]
+    H --> I[(staging.stg_voos\nview)]
+    H --> J[(gold.mart_voos_por_empresa\ntable)]
+    H --> K[(gold.mart_voos_por_rota\ntable)]
+    J --> L[Metabase Dashboard]
+    K --> L
 ```
 
-## 2. Documentação da Tarefa
+## 2. Como executar
 
-### 2.1 Ingestion Job (`src/ingestion/job.py`)
-- Conexão com Kaggle via `kaggle_client.py`.
-- Download dos dados brutos da ANAC.
-- Salva os arquivos CSV na camada Raw.
-
-### 2.2 Processing Job (`src/processing/job.py`)
-- **Limpeza de dados:**
-  - Padronização de tipos usando `schema.py`
-  - Tratamento de separadores decimais (`,` → `.`)
-  - Conversão de datas para formato `YYYY-MM-DD`
-  - Castings de tipos (Int32, Int16, Float16, etc.)
-  - Transformação de colunas `nr_*` para `nm_*` (semântica)
-- **Execução de subprocessos:**
-  - Chama `report.py` para geração de métricas
-  - Chama `visualization.py` para criação de gráficos
-- **Exportação:**
-  - Salva dados processados em formato Parquet na camada Silver
-
-### 2.3 Report (`src/processing/report.py`)
-- Geração de relatório de caracterização dos dados
-- Análise de qualidade de dados (nulos, duplicados)
-- Cálculo de métricas por coluna
-- Criação de relatórios tabulares em Markdown
-
-### 2.4 Visualization (`src/processing/visualization.py`)
-- Criação de gráficos exploratórios
-- Visualizações salvas em `docs/plots/`
-
-### 2.5 Load Job (`src/load/job.py`)
-- Leitura dos arquivos Parquet da camada Silver
-- **Uso de COPY para bulk insert:** Streaming com buffer de CSV para maior performance
-- **Inserção em tabelas Postgres:**
-  - `dim_data` - Datas (data, ano, trimestre, mês)
-  - `dim_empresa` - Companhias aéreas (ID, nome, IATA, ICAO, país)
-  - `dim_aeroporto` - Aeroportos (ID, código, nome, país)
-  - `fato_voos` - Transações de voos com medidas de quantidade e peso
-
-### 2.6 Quality (`src/quality/validate_raw.py`)
-- Validação dos dados brutos com **Great Expectations**
-- Expectations configuradas:
-  - Verificação de nulos em colunas críticas
-  - Validação de ranges numéricos
-  - Validação de formatos de data
-- Geração automática de relatório HTML em `gx/uncommitted/data_docs/`
-
-## 3. Dicionário de Dados
-
-Coluna                     | Tipo       | Descrição
-----------------------------|------------|-----------
-id_basica                   | Int32      | Identificador único do voo
-id_empresa                  | Int32      | ID da companhia aérea
-sg_empresa_icao             | String     | Código ICAO da empresa
-sg_empresa_iata             | String     | Código IATA da empresa
-nm_empresa                  | String     | Nome da empresa aérea
-nm_pais                     | String     | País da empresa
-dt_referencia               | Date       | Data de referência do voo
-nr_decolagem                | Int32      | Número de decolagens
-nr_passag_pagos             | Int32      | Passageiros pagos
-nr_passag_gratis            | Int32      | Passageiros gratuitos
-kg_carga_paga               | Float32    | Carga paga em kg
-km_distancia                | Float32    | Distância percorrida em km
-id_aerodromo_origem         | Int16      | ID do aeroporto de origem
-id_aerodromo_destino        | Int16      | ID do aeroporto de destino
-nr_horas_voadas             | Float16    | Horas voadas
-nr_velocidade_media         | Float16    | Velocidade média do voo
-
-## 4. Qualidade de Dados
-
-- **sg_empresa_iata**: 559.947 nulos -> ~2,5% das linhas.
-- **nm_pais**: 184 nulos -> % muito pequeno.
-- **nr_singular**: 224.985 nulos -> ~1% das linhas não possuem número singular do voo.
-- **id_arquivo** e **nm_arquivo**: 1.420.081 nulos
-- **id_aerodromo_origem** / **id_aerodromo_destino**: 21.473 nulos -> aproximadamente 0,1% dos voos não têm aeroporto associado.
-- **nr_decolagem**: 1.780.441 nulos -> ~8% dos voos não têm registro de decolagem, impactando métricas de quantidade de voos.
-- **kg_payload** e **kg_carga_paga**: mais de 356.383 nulos -> ~1,6% dos registros sem peso de carga.
-- **nr_passag_pagos**: 214.985 nulos -> ~1% dos registros sem passageiros pagantes.
-- **nr_passag_gratis**: 100.1252 nulos -> registros sem passageiros gratuitos.
-- **nr_horas_voadas** e **nr_velocidade_media**: 417.106 e 356.383 nulos -> cerca de 1,6% dos registros sem dados de voo ou velocidade média.
-
-## 5. Instruções de Execução
-
-### Pré-requisitos
-
-- [Docker](https://docs.docker.com/get-docker/) instalado e em execução
-- Arquivo `.env` configurado na raiz do projeto (ver seção 0)
-
-### 5.1 Construir a imagem Docker
-
-Na raiz do projeto, execute:
+### 2.1 Subir o banco
 
 ```bash
-docker-compose build
+docker compose up postgres -d
 ```
 
-### 5.2 Subir os containers
+O `sql/ddl.sql` cria automaticamente o schema `silver` e a tabela `silver.anac_voos`.
 
-O projeto possui três serviços definidos no `docker-compose.yml`:
-
-| Serviço    | Descrição                          | Porta |
-|------------|------------------------------------|-------|
-| `postgres`  | Banco de dados PostgreSQL          | 5432  |
-| `ingestao`  | Pipeline de ingestão e validação   | —     |
-| `metabase`  | Dashboard de visualização          | 3000  |
-
-Para subir todos os containers:
+### 2.2 Pipeline de ingestão (Raw → Silver → Postgres)
 
 ```bash
-docker-compose up
+docker compose up ingestao
 ```
 
-Para encerrar os containers:
+Executa: download Kaggle → processamento Polars → carga em `silver.anac_voos`.
+
+### 2.3 Transformações DBT (Silver → Gold)
 
 ```bash
-docker-compose down
+docker compose up dbt
 ```
 
-### 5.3 Executar as validações do Great Expectations
+O container executa em sequência:
+```
+dbt debug            # valida conexão
+dbt run              # cria views staging e tabelas gold
+dbt test             # roda todos os testes
+dbt docs generate    # gera documentação HTML
+```
 
-As validações são executadas automaticamente ao subir o container `ingestao` (via `docker-compose up`), pois fazem parte do pipeline principal em `src/main.py`.
-
-Para executar **somente** as validações do Great Expectations localmente (sem Docker):
+### 2.4 Metabase (BI)
 
 ```bash
-python -m venv .venv
-# source .venv/bin/activate   # Linux/macOS
-.venv\Scripts\activate    # Windows
-
-pip install uv
-uv sync
-
-python -m src.quality.validate_raw
+docker compose up metabase -d
 ```
 
-As expectations configuradas validam os dados brutos da ANAC verificando:
+Acesse [http://localhost:3000](http://localhost:3000) e configure a conexão:
+- Host: `postgres` | Porta: `5432` | DB: `lab_02_db` | User: `user` | Password: `123`
 
-| Expectation | Coluna | Regra |
+---
+
+## 3. Estrutura DBT
+
+```
+dbt_project/
+├── dbt_project.yml
+├── profiles.yml
+├── models/
+│   ├── staging/
+│   │   ├── sources.yml          # source: silver.anac_voos
+│   │   ├── stg_voos.sql         # view com limpeza + macro sazonal
+│   │   └── schema.yml           # testes genéricos
+│   └── marts/
+│       ├── mart_voos_por_empresa.sql
+│       ├── mart_voos_por_rota.sql
+│       └── schema.yml           # testes genéricos + FK
+├── macros/
+│   ├── classify_period.sql      # classifica trimestre em período sazonal
+│   └── generate_schema_name.sql # usa nomes exatos de schema
+└── tests/
+    ├── assert_passageiros_positivos.sql
+    └── assert_voos_validos.sql
+```
+
+### Models
+
+| Model | Schema | Tipo | Descrição |
+|---|---|---|---|
+| `stg_voos` | `staging` | view | Staging com tipagem, filtros e macro sazonal |
+| `mart_voos_por_empresa` | `gold` | table | Métricas por empresa, ano e trimestre |
+| `mart_voos_por_rota` | `gold` | table | Métricas por rota (origem/destino) e ano |
+
+### Macro `classify_period`
+
+```sql
+{{ classify_period('nr_trimestre_referencia') }}
+-- Retorna: 'Q1 - Verão/Carnaval' | 'Q2 - Outono' | 'Q3 - Inverno/Férias' | 'Q4 - Primavera/Natal'
+```
+
+### Testes
+
+| Tipo | Teste | Regra |
 |---|---|---|
-| `expect_column_values_to_not_be_null` | `id_basica` | Sem nulos |
-| `expect_column_values_to_not_be_null` | `nm_empresa` | Sem nulos |
-| `expect_column_values_to_be_between` | `nr_voo` | Entre 1 e 9999 |
-| `expect_column_values_to_be_between` | `nr_assentos_ofertados` | Entre 10 e 800 |
-| `expect_column_values_to_match_strftime_format` | `dt_referencia` | Formato `%Y-%m-%d` |
-| `expect_column_values_to_match_strftime_format` | `dt_partida_real` | Formato `%Y-%m-%d` |
-| `expect_column_values_to_match_strftime_format` | `dt_chegada_real` | Formato `%Y-%m-%d` |
-| `expect_column_values_to_be_between` | `kg_payload` | Entre 0 e 50000 |
-| `expect_column_values_to_be_between` | `km_distancia` | Entre 0 e 10000 |
+| Genérico | `not_null` | Colunas-chave de todos os models |
+| Genérico | `accepted_values` | `trimestre` ∈ {1,2,3,4} ; `mes` ∈ {1..12} |
+| Genérico | `relationships` | IDs de aeroporto em `mart_voos_por_rota` → `stg_voos` |
+| Singular | `assert_passageiros_positivos` | `passageiros >= 0` |
+| Singular | `assert_voos_validos` | `total_voos > 0` e `distancia_media_km > 0` |
 
-Após a execução, o relatório HTML do Great Expectations é gerado automaticamente em `gx/uncommitted/data_docs/`. Para visualizá-lo, abra o arquivo `index.html` no navegador.
+---
 
-### 5.4 Métricas de negócio e gráficos
+## 4. Executar DBT localmente (sem Docker)
 
-- Os gráficos gerados estão disponíveis em [`docs/plots`](docs/plots)
-- O arquivo markdown contendo elas está em [`docs/graficos.md`](docs/graficos.md)
-- A query com as métricas de negócio e suas respectivas queries estão disponíveis em [`docs/metricas.md`](docs/metricas.md)
+```bash
+pip install dbt-postgres==1.8.2
+cd dbt_project
+
+export DBT_HOST=localhost
+export DBT_USER=user
+export DBT_PASSWORD=123
+export DBT_DBNAME=lab_02_db
+
+dbt run   --profiles-dir .
+dbt test  --profiles-dir .
+dbt docs generate --profiles-dir .
+dbt docs serve    --profiles-dir .   # http://localhost:8080
+```
+
+---
+
+## 5. Dashboard Metabase
+
+Visualizações recomendadas na camada Gold:
+
+1. **Barras** — Total de voos por empresa (filtro por ano) → `gold.mart_voos_por_empresa`
+2. **Linha** — Evolução de passageiros por trimestre/ano → `gold.mart_voos_por_empresa`
+3. **Tabela** — Top 20 rotas por volume de passageiros → `gold.mart_voos_por_rota`
+
+---
+
+## 6. Prints do projeto
+
+> Após executar, adicione os prints em `docs/prints/`:
+> - `dbt_docs_overview.png` — tela de documentação gerada pelo DBT
+> - `dbt_lineage.png` — grafo de lineage do DBT
+> - `metabase_dashboard.png` — dashboard no Metabase
+
+---
+
+## 7. Documentação das etapas do pipeline
+
+### 7.1 Ingestion Job (`src/ingestion/job.py`)
+- Download do dataset ANAC via Kaggle API.
+- Salva os arquivos CSV na camada Raw (`data/raw/`).
+
+### 7.2 Processing Job (`src/processing/job.py`)
+- Limpeza com Polars: separadores decimais, cast de tipos, conversão de datas.
+- Exporta Parquet particionado por `dt_referencia` em `data/silver/data/`.
+
+### 7.3 Load Job (`src/load/job.py`) — **modificado para Lab02**
+- Lê o Parquet da camada Silver.
+- Carrega via `COPY` (bulk insert) na tabela flat `silver.anac_voos` no PostgreSQL.
+- **Diferença do Lab01:** não cria mais o star schema diretamente — isso é responsabilidade do DBT.
+
+### 7.4 DBT (Silver → Gold)
+- `stg_voos` (view): tipagem, filtros, macro `classify_period`.
+- `mart_voos_por_empresa` (table): agrega por empresa, ano, trimestre, taxa de ocupação.
+- `mart_voos_por_rota` (table): agrega por par origem/destino e ano.
+
+## 8. Dicionário de Dados — `silver.anac_voos`
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_basica | TEXT | Identificador único do voo |
+| id_empresa | INTEGER | ID da companhia aérea |
+| nm_empresa | TEXT | Nome da empresa aérea |
+| sg_empresa_iata | TEXT | Código IATA da empresa |
+| nm_pais | TEXT | País da empresa |
+| id_aerodromo_origem | INTEGER | ID do aeroporto de origem |
+| nm_municipio_origem | TEXT | Cidade de origem |
+| sg_uf_origem | TEXT | UF de origem |
+| nm_regiao_origem | TEXT | Região de origem |
+| id_aerodromo_destino | INTEGER | ID do aeroporto de destino |
+| nm_municipio_destino | TEXT | Cidade de destino |
+| sg_uf_destino | TEXT | UF de destino |
+| dt_referencia | DATE | Data de referência |
+| nr_ano_referencia | INTEGER | Ano |
+| nr_trimestre_referencia | INTEGER | Trimestre (1–4) |
+| nr_mes_referencia | INTEGER | Mês (1–12) |
+| nr_decolagem | INTEGER | Número de decolagens |
+| nr_passag_pagos | FLOAT | Passageiros pagos |
+| kg_carga_paga | FLOAT | Carga paga (kg) |
+| nr_horas_voadas | FLOAT | Horas voadas |
+| km_distancia | FLOAT | Distância (km) |
+| nr_assentos_ofertados | FLOAT | Assentos ofertados |
