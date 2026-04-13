@@ -7,14 +7,20 @@ Pipeline de dados ANAC com transformação Silver → Gold usando **dbt** e visu
 ## 0. Pré-requisitos
 
 - [Docker](https://www.docker.com/) instalado e em execução
+- Python 3.10+ (para desenvolvimento local, opcional)
 - Token da API do Kaggle
 
-Crie um arquivo `.env` na raiz do projeto:
+**Configuração de Kaggle API:** Crie um arquivo `.env` na raiz do projeto:
 
 ```.env
 KAGGLE_API_TOKEN=seu_token_aqui
 ```
 
+**Dependências Python:** O projeto usa as seguintes versões principais:
+- `polars==1.39.2` — Processamento de dataframes
+- `dbt-postgres==1.8.x` — dbt para PostgreSQL
+- `psycopg2==2.9.11` — Adaptador PostgreSQL
+- `kagglehub==1.0.0` — Download de datasets do Kaggle
 ---
 
 ## 1. Arquitetura
@@ -170,7 +176,8 @@ Visualizações disponíveis na camada Gold:
 - Exporta Parquet particionado por `dt_referencia` em `data/silver/data/`.
 
 ### 6.3 Load Job (`src/load/job.py`)
-- Lê o Parquet da camada Silver.
+- Lê o Parquet da camada Silver
+- Transforma e valida 26 colunas com casting de tipos específicos.
 - Carrega via `COPY` (bulk insert) na tabela flat `silver.anac_voos` no PostgreSQL.
 - **Diferença do Lab01:** não cria o star schema diretamente — isso é responsabilidade do DBT.
 
@@ -181,7 +188,11 @@ Visualizações disponíveis na camada Gold:
 
 ---
 
-## 7. Dicionário de Dados — `silver.anac_voos`
+## 7. Dicionário de Dados
+
+### 7.1 Silver Layer — `silver.anac_voos`
+
+Tabela raw carregada diretamente do dataset ANAC. Contém os dados originais com mínima transformação.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -207,3 +218,83 @@ Visualizações disponíveis na camada Gold:
 | nr_horas_voadas | FLOAT | Horas voadas |
 | km_distancia | FLOAT | Distância (km) |
 | nr_assentos_ofertados | FLOAT | Assentos ofertados |
+
+### 7.2 Staging Layer — `staging.stg_voos`
+
+View que realiza transformações e limpeza de dados: tipagem, filtros, normalização de colunas e enriquecimento com período sazonal.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_basica | TEXT | Identificador único do voo |
+| id_empresa | INTEGER | ID da companhia aérea |
+| nm_empresa | TEXT | Nome da empresa aérea |
+| sg_empresa_iata | TEXT | Código IATA da empresa |
+| nm_pais | TEXT | País da empresa |
+| id_aerodromo_origem | INTEGER | ID do aeroporto de origem |
+| nm_aerodromo_origem | TEXT | Nome do aeroporto de origem |
+| nm_municipio_origem | TEXT | Cidade de origem |
+| sg_uf_origem | TEXT | UF de origem |
+| nm_regiao_origem | TEXT | Região de origem |
+| id_aerodromo_destino | INTEGER | ID do aeroporto de destino |
+| nm_aerodromo_destino | TEXT | Nome do aeroporto de destino |
+| nm_municipio_destino | TEXT | Cidade de destino |
+| sg_uf_destino | TEXT | UF de destino |
+| nm_regiao_destino | TEXT | Região de destino |
+| dt_referencia | DATE | Data de referência |
+| ano | INTEGER | Ano (extraído de dt_referencia) |
+| trimestre | INTEGER | Trimestre (1–4) |
+| mes | INTEGER | Mês (1–12) |
+| periodo_sazonal | TEXT | Classificação sazonal brasileira (Q1–Q4) — gerada pela macro `classify_period` |
+| quantidade_voos | INTEGER | Número de decolagens (de nr_decolagem; padrão 0 se nulo) |
+| passageiros | INTEGER | Passageiros pagos (de nr_passag_pagos; padrão 0 se nulo) |
+| carga_kg | FLOAT | Carga paga em kg (de kg_carga_paga; padrão 0 se nulo) |
+| horas_voadas | FLOAT | Total de horas voadas (de nr_horas_voadas; padrão 0 se nulo) |
+| distancia_km | FLOAT | Distância em km (de km_distancia; padrão 0 se nulo) |
+| assentos_ofertados | FLOAT | Assentos ofertados (de nr_assentos_ofertados; padrão 0 se nulo) |
+
+### 7.3 Gold Layer — Marts (Tabelas de Análise)
+
+#### `gold.mart_voos_por_empresa`
+
+Agrega métricas por companhia aérea, ano e trimestre sazonal.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_empresa | INTEGER | ID da companhia aérea |
+| nm_empresa | TEXT | Nome da empresa |
+| sg_empresa_iata | TEXT | Código IATA |
+| nm_pais | TEXT | País da empresa |
+| ano | INTEGER | Ano |
+| trimestre | INTEGER | Trimestre |
+| periodo_sazonal | TEXT | Período sazonal |
+| registros | INTEGER | Contagem de registros |
+| total_voos | INTEGER | Soma de quantidade_voos |
+| total_passageiros | INTEGER | Soma de passageiros |
+| total_carga_kg | FLOAT | Soma de carga_kg |
+| total_horas_voadas | FLOAT | Soma de horas_voadas |
+| media_distancia_km | NUMERIC(10,2) | Média de distancia_km (2 casas decimais) |
+| total_assentos_ofertados | FLOAT | Soma de assentos_ofertados |
+| taxa_ocupacao_pct | NUMERIC(5,2) | Taxa de ocupação = (total_passageiros / total_assentos_ofertados) × 100 |
+
+#### `gold.mart_voos_por_rota`
+
+Agrega métricas por rota (par origem/destino) e ano.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_aerodromo_origem | INTEGER | ID aeroporto origem |
+| nm_aerodromo_origem | TEXT | Nome aeroporto origem |
+| nm_municipio_origem | TEXT | Município origem |
+| sg_uf_origem | TEXT | UF origem |
+| nm_regiao_origem | TEXT | Região origem |
+| id_aerodromo_destino | INTEGER | ID aeroporto destino |
+| nm_aerodromo_destino | TEXT | Nome aeroporto destino |
+| nm_municipio_destino | TEXT | Município destino |
+| sg_uf_destino | TEXT | UF destino |
+| nm_regiao_destino | TEXT | Região destino |
+| ano | INTEGER | Ano |
+| registros | INTEGER | Contagem de registros |
+| total_voos | INTEGER | Soma de quantidade_voos |
+| total_passageiros | INTEGER | Soma de passageiros |
+| distancia_media_km | NUMERIC(10,2) | Média de distancia_km (2 casas decimais) |
+| total_carga_kg | FLOAT | Soma de carga_kg |
