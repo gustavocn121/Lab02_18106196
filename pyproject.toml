@@ -3,7 +3,7 @@ name = "lab01-part2-18106196"
 version = "0.1.0"
 description = "Pipeline de ingestão de dados containerizado"
 authors = [
-    { name = "Gustavo" }
+    { name = "Gustavo de Castro Nogueira" }
 ]
 readme = "README.md"
 requires-python = ">=3.14"
